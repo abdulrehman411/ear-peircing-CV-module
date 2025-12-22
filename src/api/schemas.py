@@ -2,7 +2,7 @@
 Pydantic schemas for API requests and responses.
 """
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from src.models.ear import Point, BoundingBox, EarDimensions, Landmark
 from src.models.piercing import Piercing
 from src.models.validation import Offset, Adjustment, ValidationResult
@@ -12,6 +12,18 @@ from src.models.validation import Offset, Adjustment, ValidationResult
 class EarDetectionRequest(BaseModel):
     """Request for ear detection."""
     image: str = Field(..., description="Base64 encoded image")
+    
+    @field_validator('image')
+    @classmethod
+    def clean_base64(cls, v: str) -> str:
+        """Clean base64 string by removing whitespace and control characters."""
+        if isinstance(v, str):
+            # Remove data URL prefix if present
+            if ',' in v:
+                v = v.split(',')[1]
+            # Remove all whitespace, newlines, and control characters
+            v = ''.join(v.split())
+        return v
 
 
 class PiercingDetectionRequest(BaseModel):
@@ -19,6 +31,16 @@ class PiercingDetectionRequest(BaseModel):
     image: str = Field(..., description="Base64 encoded image")
     ear_landmarks: List[dict] = Field(..., description="Ear landmarks from detection")
     bounding_box: dict = Field(..., description="Ear bounding box")
+    
+    @field_validator('image')
+    @classmethod
+    def clean_base64(cls, v: str) -> str:
+        """Clean base64 string by removing whitespace and control characters."""
+        if isinstance(v, str):
+            if ',' in v:
+                v = v.split(',')[1]
+            v = ''.join(v.split())
+        return v
 
 
 class PointMarkRequest(BaseModel):
@@ -27,6 +49,16 @@ class PointMarkRequest(BaseModel):
     point: dict = Field(..., description="Point coordinates {x, y} (normalized 0-1)")
     ear_landmarks: List[dict] = Field(..., description="Ear landmarks")
     bounding_box: dict = Field(..., description="Ear bounding box")
+    
+    @field_validator('image')
+    @classmethod
+    def clean_base64(cls, v: str) -> str:
+        """Clean base64 string by removing whitespace and control characters."""
+        if isinstance(v, str):
+            if ',' in v:
+                v = v.split(',')[1]
+            v = ''.join(v.split())
+        return v
 
 
 class ValidationRequest(BaseModel):
@@ -36,6 +68,16 @@ class ValidationRequest(BaseModel):
     digital_point: dict = Field(..., description="Digital point coordinates")
     ear_landmarks: List[dict] = Field(..., description="Ear landmarks")
     bounding_box: dict = Field(..., description="Ear bounding box")
+    
+    @field_validator('original_image', 'rescan_image')
+    @classmethod
+    def clean_base64(cls, v: str) -> str:
+        """Clean base64 string by removing whitespace and control characters."""
+        if isinstance(v, str):
+            if ',' in v:
+                v = v.split(',')[1]
+            v = ''.join(v.split())
+        return v
 
 
 class FeedbackRequest(BaseModel):
@@ -44,6 +86,16 @@ class FeedbackRequest(BaseModel):
     expected_point: dict = Field(..., description="Expected point coordinates")
     ear_landmarks: List[dict] = Field(..., description="Ear landmarks")
     bounding_box: dict = Field(..., description="Ear bounding box")
+    
+    @field_validator('rescan_image')
+    @classmethod
+    def clean_base64(cls, v: str) -> str:
+        """Clean base64 string by removing whitespace and control characters."""
+        if isinstance(v, str):
+            if ',' in v:
+                v = v.split(',')[1]
+            v = ''.join(v.split())
+        return v
 
 
 class SymmetryMapRequest(BaseModel):
@@ -55,6 +107,16 @@ class SymmetryMapRequest(BaseModel):
     ear2_landmarks: List[dict] = Field(..., description="Second ear landmarks")
     ear1_bounding_box: dict = Field(..., description="First ear bounding box")
     ear2_bounding_box: dict = Field(..., description="Second ear bounding box")
+    
+    @field_validator('ear1_image', 'ear2_image')
+    @classmethod
+    def clean_base64(cls, v: str) -> str:
+        """Clean base64 string by removing whitespace and control characters."""
+        if isinstance(v, str):
+            if ',' in v:
+                v = v.split(',')[1]
+            v = ''.join(v.split())
+        return v
 
 
 class RescanValidateRequest(BaseModel):
@@ -64,6 +126,16 @@ class RescanValidateRequest(BaseModel):
     validation_history: List[dict] = Field(default=[], description="Previous validation results")
     ear_landmarks: List[dict] = Field(..., description="Ear landmarks")
     bounding_box: dict = Field(..., description="Ear bounding box")
+    
+    @field_validator('rescan_image')
+    @classmethod
+    def clean_base64(cls, v: str) -> str:
+        """Clean base64 string by removing whitespace and control characters."""
+        if isinstance(v, str):
+            if ',' in v:
+                v = v.split(',')[1]
+            v = ''.join(v.split())
+        return v
 
 
 # Response Schemas

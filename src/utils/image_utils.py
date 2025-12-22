@@ -24,6 +24,9 @@ def base64_to_image(base64_string: str) -> np.ndarray:
         if ',' in base64_string:
             base64_string = base64_string.split(',')[1]
         
+        # Remove whitespace, newlines, and control characters
+        base64_string = ''.join(base64_string.split())
+        
         # Decode base64
         image_data = base64.b64decode(base64_string)
         

@@ -235,11 +235,3 @@ Error responses follow this format:
 - Enable caching if not already enabled
 - Consider using image compression before sending
 
-## License
-
-This project is part of a placement assessment.
-
-## Support
-
-For issues or questions, please refer to the API documentation at `/docs` endpoint.
-

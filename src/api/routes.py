@@ -4,6 +4,8 @@ API routes for the CV module.
 import numpy as np
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 from src.api.schemas import (
     EarDetectionRequest,
     EarDetectionResponse,
@@ -29,7 +31,7 @@ from src.services.piercing_detection import PiercingDetectionService
 from src.services.point_validation import PointValidationService
 from src.services.symmetry_mapping import SymmetryMappingService
 from src.models.ear import Point, Landmark, BoundingBox, EarDimensions
-from src.models.validation import ValidationResult
+from src.models.validation import ValidationResult, Offset
 
 router = APIRouter()
 
@@ -41,32 +43,69 @@ piercing_detection = PiercingDetectionService()
 point_validation = PointValidationService()
 symmetry_mapping = SymmetryMappingService()
 
-
-def _dict_to_point(data: dict) -> Point:
-    """Convert dict to Point."""
-    return Point(x=data["x"], y=data["y"])
+# Thread pool executor for CPU-bound operations
+_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cv_worker")
 
 
-def _dict_to_landmark(data: dict) -> Landmark:
-    """Convert dict to Landmark."""
+def _dict_to_point(data: Dict[str, Any]) -> Point:
+    """
+    Convert dictionary to Point object.
+    
+    Args:
+        data: Dictionary with 'x' and 'y' keys
+        
+    Returns:
+        Point object
+        
+    Raises:
+        KeyError: If required keys are missing
+    """
+    return Point(x=float(data["x"]), y=float(data["y"]))
+
+
+def _dict_to_landmark(data: Dict[str, Any]) -> Landmark:
+    """
+    Convert dictionary to Landmark object.
+    
+    Args:
+        data: Dictionary with landmark data
+        
+    Returns:
+        Landmark object
+    """
     return Landmark(
-        x=data.get("x", 0),
-        y=data.get("y", 0),
-        z=data.get("z"),
-        visibility=data.get("visibility"),
-        index=data.get("index")
+        x=float(data.get("x", 0)),
+        y=float(data.get("y", 0)),
+        z=float(data["z"]) if data.get("z") is not None else None,
+        visibility=float(data["visibility"]) if data.get("visibility") is not None else None,
+        index=int(data["index"]) if data.get("index") is not None else None
     )
 
 
-def _dict_to_bbox(data: dict) -> BoundingBox:
-    """Convert dict to BoundingBox."""
+def _dict_to_bbox(data: Dict[str, Any]) -> BoundingBox:
+    """
+    Convert dictionary to BoundingBox object.
+    
+    Args:
+        data: Dictionary with bounding box coordinates
+        
+    Returns:
+        BoundingBox object
+        
+    Raises:
+        KeyError: If required keys are missing
+    """
+    x_min = float(data["x_min"])
+    y_min = float(data["y_min"])
+    x_max = float(data["x_max"])
+    y_max = float(data["y_max"])
     return BoundingBox(
-        x_min=data["x_min"],
-        y_min=data["y_min"],
-        x_max=data["x_max"],
-        y_max=data["y_max"],
-        width=data.get("width", data["x_max"] - data["x_min"]),
-        height=data.get("height", data["y_max"] - data["y_min"])
+        x_min=x_min,
+        y_min=y_min,
+        x_max=x_max,
+        y_max=y_max,
+        width=float(data.get("width", x_max - x_min)),
+        height=float(data.get("height", y_max - y_min))
     )
 
 
@@ -80,12 +119,21 @@ async def health_check():
 async def detect_ear(request: EarDetectionRequest):
     """Detect ear and measure dimensions."""
     try:
-        # Process image
-        image = image_processor.process_image(request.image)
+        # Process image in thread pool (CPU-bound)
+        loop = asyncio.get_event_loop()
+        image = await loop.run_in_executor(
+            _executor,
+            image_processor.process_image,
+            request.image
+        )
         height, width = image.shape[:2]
         
-        # Detect ear
-        result = ear_detection.detect_ear(image)
+        # Detect ear in thread pool
+        result = await loop.run_in_executor(
+            _executor,
+            ear_detection.detect_ear,
+            image
+        )
         
         if not result.ear_detected:
             return EarDetectionResponse(
@@ -127,16 +175,25 @@ async def detect_ear(request: EarDetectionRequest):
 async def detect_piercings(request: PiercingDetectionRequest):
     """Detect existing piercings."""
     try:
-        # Process image
-        image = image_processor.process_image(request.image)
+        # Process image in thread pool
+        loop = asyncio.get_event_loop()
+        image = await loop.run_in_executor(
+            _executor,
+            image_processor.process_image,
+            request.image
+        )
         height, width = image.shape[:2]
         
         # Convert landmarks and bbox
         landmarks = [_dict_to_landmark(l) for l in request.ear_landmarks]
         bbox = _dict_to_bbox(request.bounding_box)
         
-        # Detect piercings
-        result = piercing_detection.detect_piercings(image, landmarks, bbox, width, height)
+        # Detect piercings in thread pool
+        result = await loop.run_in_executor(
+            _executor,
+            piercing_detection.detect_piercings,
+            image, landmarks, bbox, width, height
+        )
         
         return PiercingDetectionResponse(
             success=True,
@@ -156,8 +213,13 @@ async def detect_piercings(request: PiercingDetectionRequest):
 async def mark_point(request: PointMarkRequest):
     """Mark a digital piercing point."""
     try:
-        # Process image
-        image = image_processor.process_image(request.image)
+        # Process image in thread pool
+        loop = asyncio.get_event_loop()
+        image = await loop.run_in_executor(
+            _executor,
+            image_processor.process_image,
+            request.image
+        )
         height, width = image.shape[:2]
         
         # Convert data
@@ -165,7 +227,7 @@ async def mark_point(request: PointMarkRequest):
         landmarks = [_dict_to_landmark(l) for l in request.ear_landmarks]
         bbox = _dict_to_bbox(request.bounding_box)
         
-        # Mark point
+        # Mark point (lightweight operation, can run directly)
         mark = point_validation.mark_point(point, landmarks, bbox, width, height)
         
         return PointMarkResponse(
@@ -182,20 +244,27 @@ async def mark_point(request: PointMarkRequest):
 async def validate_point(request: ValidationRequest):
     """Validate physical point against digital point."""
     try:
-        # Process images
-        rescan_image = image_processor.process_image(request.rescan_image)
+        # Process images in thread pool
+        loop = asyncio.get_event_loop()
+        rescan_image = await loop.run_in_executor(
+            _executor,
+            image_processor.process_image,
+            request.rescan_image
+        )
         height, width = rescan_image.shape[:2]
         
         # Convert data
         digital_point = _dict_to_point(request.digital_point)
         bbox = _dict_to_bbox(request.bounding_box)
         
-        # Detect physical mark
-        physical_point = point_validation.detect_physical_mark(
+        # Detect physical mark in thread pool
+        physical_point = await loop.run_in_executor(
+            _executor,
+            point_validation.detect_physical_mark,
             rescan_image, digital_point, bbox, width, height
         )
         
-        # Validate
+        # Validate (lightweight operation)
         result = point_validation.validate_point(digital_point, physical_point, width, height)
         
         return ValidationResponse(
@@ -222,20 +291,27 @@ async def validate_point(request: ValidationRequest):
 async def get_feedback(request: FeedbackRequest):
     """Get real-time feedback for point adjustment."""
     try:
-        # Process image
-        image = image_processor.process_image(request.rescan_image)
+        # Process image in thread pool
+        loop = asyncio.get_event_loop()
+        image = await loop.run_in_executor(
+            _executor,
+            image_processor.process_image,
+            request.rescan_image
+        )
         height, width = image.shape[:2]
         
         # Convert data
         expected_point = _dict_to_point(request.expected_point)
         bbox = _dict_to_bbox(request.bounding_box)
         
-        # Detect mark
-        physical_point = point_validation.detect_physical_mark(
+        # Detect mark in thread pool
+        physical_point = await loop.run_in_executor(
+            _executor,
+            point_validation.detect_physical_mark,
             image, expected_point, bbox, width, height
         )
         
-        # Validate
+        # Validate (lightweight operation)
         result = point_validation.validate_point(expected_point, physical_point, width, height)
         
         # Generate message
@@ -264,16 +340,21 @@ async def get_feedback(request: FeedbackRequest):
 async def symmetry_map(request: SymmetryMapRequest):
     """Map piercing point from first ear to second ear."""
     try:
-        # Process images
-        ear1_image = image_processor.process_image(request.ear1_image)
-        ear2_image = image_processor.process_image(request.ear2_image)
+        # Process images in parallel using thread pool
+        loop = asyncio.get_event_loop()
+        ear1_image, ear2_image = await asyncio.gather(
+            loop.run_in_executor(_executor, image_processor.process_image, request.ear1_image),
+            loop.run_in_executor(_executor, image_processor.process_image, request.ear2_image)
+        )
         
         height1, width1 = ear1_image.shape[:2]
         height2, width2 = ear2_image.shape[:2]
         
-        # Detect and measure both ears
-        ear1_result = ear_detection.detect_ear(ear1_image)
-        ear2_result = ear_detection.detect_ear(ear2_image)
+        # Detect and measure both ears in parallel
+        ear1_result, ear2_result = await asyncio.gather(
+            loop.run_in_executor(_executor, ear_detection.detect_ear, ear1_image),
+            loop.run_in_executor(_executor, ear_detection.detect_ear, ear2_image)
+        )
         
         if not ear1_result.ear_detected or not ear2_result.ear_detected:
             raise HTTPException(status_code=400, detail="Both ears must be detected")
@@ -284,12 +365,12 @@ async def symmetry_map(request: SymmetryMapRequest):
         # Convert point
         ear1_point = _dict_to_point(request.ear1_point)
         
-        # Map point
+        # Map point (lightweight operation)
         mapped_point = symmetry_mapping.map_point_to_second_ear(
             ear1_point, ear1_dimensions, ear2_dimensions
         )
         
-        # Calculate scale factors
+        # Calculate scale factors (lightweight operation)
         scale_factors = symmetry_mapping.calculate_scale_factor(
             ear1_dimensions, ear2_dimensions
         )
@@ -317,8 +398,13 @@ async def symmetry_map(request: SymmetryMapRequest):
 async def rescan_validate(request: RescanValidateRequest):
     """Validate with re-scan and track history."""
     try:
-        # Process image
-        image = image_processor.process_image(request.rescan_image)
+        # Process image in thread pool
+        loop = asyncio.get_event_loop()
+        image = await loop.run_in_executor(
+            _executor,
+            image_processor.process_image,
+            request.rescan_image
+        )
         height, width = image.shape[:2]
         
         # Convert data
@@ -339,8 +425,10 @@ async def rescan_validate(request: RescanValidateRequest):
                 confidence=h.get("confidence", 0)
             ))
         
-        # Validate
-        result = point_validation.rescan_validate(
+        # Validate in thread pool
+        result = await loop.run_in_executor(
+            _executor,
+            point_validation.rescan_validate,
             image, original_point, history, bbox, width, height
         )
         

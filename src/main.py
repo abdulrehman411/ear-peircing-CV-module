@@ -2,12 +2,17 @@
 FastAPI application entry point.
 """
 import logging
+import atexit
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from src.config import get_settings
-from src.api.routes import router
-from src.api.error_handlers import http_exception_handler, general_exception_handler
+from src.api.routes import router, _executor
+from src.api.error_handlers import (
+    http_exception_handler,
+    general_exception_handler,
+    validation_exception_handler
+)
 
 # Configure logging
 logging.basicConfig(
@@ -38,10 +43,27 @@ app.add_middleware(
 
 # Add error handlers
 app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, general_exception_handler)
 
 # Include API routes
 app.include_router(router, prefix=f"/api/{settings.api_version}", tags=["CV"])
+
+
+def cleanup_executor():
+    """Cleanup thread pool executor on shutdown."""
+    if _executor:
+        _executor.shutdown(wait=True, cancel_futures=False)
+
+
+# Register cleanup function
+atexit.register(cleanup_executor)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on application shutdown."""
+    cleanup_executor()
 
 
 @app.get("/")

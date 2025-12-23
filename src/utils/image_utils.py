@@ -18,7 +18,13 @@ def base64_to_image(base64_string: str) -> np.ndarray:
         
     Returns:
         numpy array of image (BGR format for OpenCV)
+        
+    Raises:
+        ValueError: If base64 string is invalid or image cannot be decoded
     """
+    if not base64_string or not isinstance(base64_string, str):
+        raise ValueError("Base64 string must be a non-empty string")
+    
     try:
         # Remove data URL prefix if present
         if ',' in base64_string:
@@ -27,11 +33,28 @@ def base64_to_image(base64_string: str) -> np.ndarray:
         # Remove whitespace, newlines, and control characters
         base64_string = ''.join(base64_string.split())
         
+        # Validate base64 string length (minimum reasonable size)
+        if len(base64_string) < 100:
+            raise ValueError("Base64 string is too short to be a valid image")
+        
         # Decode base64
-        image_data = base64.b64decode(base64_string)
+        try:
+            image_data = base64.b64decode(base64_string, validate=True)
+        except Exception as e:
+            raise ValueError(f"Invalid base64 encoding: {str(e)}")
+        
+        if len(image_data) == 0:
+            raise ValueError("Decoded image data is empty")
         
         # Convert to PIL Image
-        image = Image.open(io.BytesIO(image_data))
+        try:
+            image = Image.open(io.BytesIO(image_data))
+        except Exception as e:
+            raise ValueError(f"Failed to open image: {str(e)}")
+        
+        # Verify image format
+        if image.format not in ('JPEG', 'PNG', 'BMP', 'TIFF', 'WEBP'):
+            raise ValueError(f"Unsupported image format: {image.format}. Supported formats: JPEG, PNG, BMP, TIFF, WEBP")
         
         # Convert to RGB if needed
         if image.mode != 'RGB':
@@ -40,10 +63,16 @@ def base64_to_image(base64_string: str) -> np.ndarray:
         # Convert to numpy array
         image_array = np.array(image)
         
+        # Validate image dimensions
+        if image_array.size == 0:
+            raise ValueError("Image has zero size")
+        
         # Convert RGB to BGR for OpenCV
         image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
         
         return image_bgr
+    except ValueError:
+        raise
     except Exception as e:
         raise ValueError(f"Failed to decode base64 image: {str(e)}")
 
@@ -84,7 +113,7 @@ def image_to_base64(image: np.ndarray, format: str = "JPEG") -> str:
 
 def resize_image(image: np.ndarray, max_size: int, maintain_aspect: bool = True) -> np.ndarray:
     """
-    Resize image while maintaining aspect ratio.
+    Resize image while maintaining aspect ratio with optimized interpolation.
     
     Args:
         image: Input image
@@ -110,7 +139,10 @@ def resize_image(image: np.ndarray, max_size: int, maintain_aspect: bool = True)
         new_width = max_size
         new_height = max_size
     
-    resized = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+    # Use INTER_AREA for downscaling (better quality and performance)
+    # Use INTER_LINEAR for upscaling (though we typically downscale)
+    interpolation = cv2.INTER_AREA if max(height, width) > max_size else cv2.INTER_LINEAR
+    resized = cv2.resize(image, (new_width, new_height), interpolation=interpolation)
     return resized
 
 

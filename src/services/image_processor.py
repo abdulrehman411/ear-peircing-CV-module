@@ -2,6 +2,7 @@
 Image preprocessing pipeline.
 """
 import numpy as np
+import gc
 from typing import Optional
 from src.config import get_settings
 from src.utils.image_utils import (
@@ -22,7 +23,7 @@ class ImageProcessor:
     
     def process_image(self, base64_string: str, preprocess: bool = True) -> np.ndarray:
         """
-        Process image from base64 string.
+        Process image from base64 string with optimized memory management.
         
         Args:
             base64_string: Base64 encoded image
@@ -34,21 +35,36 @@ class ImageProcessor:
         # Convert base64 to numpy array
         image = base64_to_image(base64_string)
         
+        # Validate image size early to avoid unnecessary processing
+        height, width = image.shape[:2]
+        if height == 0 or width == 0:
+            raise ValueError("Image has invalid dimensions")
+        
         if not preprocess:
             return image
         
-        # Resize if needed
-        if self.settings.max_image_size > 0:
-            image = resize_image(image, self.settings.max_image_size)
-        
-        # Normalize lighting if enabled
-        if self.settings.lighting_correction_enabled:
-            image = normalize_lighting(image)
-        
-        # Reduce noise
-        image = reduce_noise(image)
-        
-        return image
+        try:
+            # Resize if needed (do this first to reduce memory usage)
+            if self.settings.max_image_size > 0:
+                original_size = image.nbytes
+                image = resize_image(image, self.settings.max_image_size)
+                # Force garbage collection if significant size reduction
+                if original_size > image.nbytes * 2:
+                    gc.collect()
+            
+            # Normalize lighting if enabled
+            if self.settings.lighting_correction_enabled:
+                image = normalize_lighting(image)
+            
+            # Reduce noise (in-place operations where possible)
+            image = reduce_noise(image)
+            
+            return image
+        except Exception as e:
+            # Clean up on error
+            del image
+            gc.collect()
+            raise
     
     def extract_ear_region(self, image: np.ndarray, bbox: tuple, padding: int = 20) -> np.ndarray:
         """

@@ -5,25 +5,45 @@ import cv2
 import mediapipe as mp
 import numpy as np
 from typing import List, Optional, Tuple
+from threading import Lock
 from src.config import get_settings
 from src.models.ear import Landmark
 
 
 class MediaPipeWrapper:
-    """Wrapper for MediaPipe Face Mesh for ear detection."""
+    """Wrapper for MediaPipe Face Mesh for ear detection with singleton pattern."""
     
     # MediaPipe face mesh landmark indices for ears
     LEFT_EAR_INDICES = list(range(234, 455))  # Left ear landmarks
     RIGHT_EAR_INDICES = []  # Will be calculated based on face orientation
     
+    _instance: Optional['MediaPipeWrapper'] = None
+    _lock: Lock = Lock()
+    
+    def __new__(cls):
+        """Singleton pattern to ensure only one instance exists."""
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self):
+        """Initialize MediaPipe Face Mesh model (only once due to singleton)."""
+        if hasattr(self, '_initialized'):
+            return
+        
         self.settings = get_settings()
         self.mp_face_mesh = mp.solutions.face_mesh
         self.face_mesh = None
+        self._initialized = False
         self._initialize()
     
     def _initialize(self):
         """Initialize MediaPipe Face Mesh model."""
+        if self._initialized:
+            return
+            
         try:
             self.face_mesh = self.mp_face_mesh.FaceMesh(
                 static_image_mode=False,
@@ -32,6 +52,7 @@ class MediaPipeWrapper:
                 min_detection_confidence=self.settings.mediapipe_confidence_threshold,
                 min_tracking_confidence=0.5
             )
+            self._initialized = True
         except Exception as e:
             raise RuntimeError(f"Failed to initialize MediaPipe: {str(e)}")
     

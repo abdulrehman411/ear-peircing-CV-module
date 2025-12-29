@@ -2,8 +2,8 @@
 Coordinate transformation utilities.
 """
 import numpy as np
-from typing import Tuple, List, Union
-from src.models.ear import Point, BoundingBox, Landmark
+from typing import Tuple, List
+from src.models.ear import Point, BoundingBox
 
 
 def pixel_to_normalized(x: float, y: float, width: int, height: int) -> Tuple[float, float]:
@@ -160,7 +160,7 @@ def transform_for_symmetry(
     return scaled
 
 
-def normalize_landmarks(landmarks: List[Landmark], width: int, height: int) -> List[Landmark]:
+def normalize_landmarks(landmarks: List[Point], width: int, height: int) -> List[Point]:
     """
     Normalize landmark coordinates to 0-1 range.
     
@@ -175,12 +175,6 @@ def normalize_landmarks(landmarks: List[Landmark], width: int, height: int) -> L
     normalized = []
     for landmark in landmarks:
         norm_x, norm_y = pixel_to_normalized(landmark.x, landmark.y, width, height)
-        normalized.append(Landmark(
-            x=norm_x,
-            y=norm_y,
-            z=landmark.z / width if landmark.z is not None else None,
-            visibility=landmark.visibility,
-            index=landmark.index
-        ))
+        normalized.append(Point(x=norm_x, y=norm_y))
     return normalized
 
